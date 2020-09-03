@@ -863,7 +863,8 @@ static int sgil1_probe(struct usb_interface *interface, const struct usb_device_
 		int i;
 
 		for (port = 0; port < pdev->maxchild; port++)
-			if (pdev->children[port] == cdev)
+			/* if (pdev->children[port] == cdev) */
+			if (usb_hub_find_child(pdev,port) == cdev)
 				break;
 
 		if (port >= pdev->maxchild)
