@@ -1,0 +1,81 @@
+#
+# Makefile for building the SGI L1 USB driver loadable module
+#
+
+DEFINES=-D__KERNEL__ -DMODULE -D_LOOSE_KERNEL_NAMES -DUNIX -DLINUX -D_X86_=1 -Di386=1 -D_GNU_SOURCE
+INCLUDES=-I.
+
+OBJECTS=sgil1.o
+HEADERS=sgil1.h
+
+CFLAGS=-Wall -Wunknown-pragmas -Wno-multichar -O  $(DEFINES) $(INCLUDES)
+
+# if the kernel version is not passed in, use "uname -r" to determine it
+ifndef KERNEL_VERSION
+KERNEL_VERSION=$(shell uname -r)
+endif
+
+# kernel directories and attributes
+KERNEL_MOD_DIR=/lib/modules/$(KERNEL_VERSION)
+KERNEL_TYPE:=$(shell echo $(KERNEL_VERSION) | sed 's_^[^se]*\(\|smp\|enterprise\)$$_-\1_;s_^-$$__')
+KERNEL_RELEASE:=$(shell echo $(KERNEL_VERSION) | sed 's|smp\|enterprise||g')
+KERNEL_ARCH:=$(shell rpm -q --qf '%{ARCH}' kernel$(KERNEL_TYPE)-$(KERNEL_RELEASE))
+KERNEL_SMP:=$(shell if [ "$(KERNEL_TYPE)" = "-smp" ]; then echo 1; else echo 0; fi)
+KERNEL_ENTERPRISE:=$(shell if [ "$(KERNEL_TYPE)" = "-enterprise" ]; then echo 1; else echo 0; fi)
+KERNEL_UP:=$(shell if [ "$(KERNEL_SMP)" = "0" -a "$(KERNEL_ENTERPRISE)" = "0" ]; then echo 1; else echo 0; fi)
+
+# defines based on kernel attributes
+DEFINES += -D__MODULE_KERNEL_$(KERNEL_ARCH)=1 \
+           -D__BOOT_KERNEL_ENTERPRISE=$(KERNEL_ENTERPRISE) \
+           -D__BOOT_KERNEL_SMP=$(KERNEL_SMP) \
+           -D__BOOT_KERNEL_UP=$(KERNEL_UP) \
+            
+# module install location and install tool
+INSTALLDIR=$(KERNEL_MOD_DIR)/kernel/drivers/usb
+INSTALL=`which install`
+
+# allow command-line specification of kernel include file directory
+# and extra compile defines
+
+ifndef SYSINCLUDES
+SYSINCLUDES = $(KERNEL_MOD_DIR)/build/include
+endif
+INCLUDES += -I$(SYSINCLUDES) -include $(SYSINCLUDES)/linux/modversions.h
+
+DEFINES += $(EXTRA_DEFINES)
+
+
+
+all : install
+
+install : clean package-install
+
+package-install : sgil1.o
+	@if [ `id -ur` != 0 ]; then \
+		echo "Please run \"make install\" as root."; \
+	elif [ ! -d $(INSTALLDIR) ]; then \
+		echo "The install directory ($(INSTALLDIR)) does not exist!"; \
+	else \
+		$(INSTALL) -m 0664 -o root -g root sgil1.o $(INSTALLDIR)/sgil1.o && \
+		echo "sgil1.o driver installed to $(INSTALLDIR)/sgil1.o" && \
+		$(INSTALL) -m 0775 -o root -g root sgil1.initscript /etc/rc.d/init.d/sgil1 && \
+		/sbin/chkconfig --add sgil1 && \
+		echo "sgil1 initscript installed to /etc/rc.d/init.d/sgil1"; \
+		if [ "$(KERNEL_VERSION)" = `uname -r` ]; then \
+			/sbin/depmod -a && \
+			if [ -x /etc/rc.d/init.d/sgil1 ]; then \
+				/etc/rc.d/init.d/sgil1 start; \
+			else \
+				echo "ERROR! could not execute the sgil1 initscript /etc/rc.d/init.d/sgil1\n"; \
+			fi; \
+		fi; \
+	fi
+
+
+sgil1.o : sgil1_24.c $(HEADERS)
+	$(CC) -c -o $(@) $(CFLAGS) sgil1_24.c
+
+
+clean:
+	$(RM) $(OBJECTS)
+

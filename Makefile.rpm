@@ -1,0 +1,93 @@
+# NOTE: this make is ONLY used when building the drivers for RPMs.
+# Otherwise, use the 'Makefile'  (in conjunction with the sgil1_make_driver
+# script....).
+
+
+#
+#
+# Makefile for building the SGI L1 USB driver loadable module
+#
+
+DEFINES=-D__KERNEL__ -DMODULE -D_LOOSE_KERNEL_NAMES -DUNIX -DLINUX -D_X86_=1 -Di386=1 -D_GNU_SOURCE -DSKIP_BOOT_KERNEL_H
+INCLUDES=-I.
+
+OBJECTS=up.o smp.o sgil1.o
+HEADERS=sgil1.h
+
+CFLAGS=-Wall -Wunknown-pragmas -Wno-multichar -O  $(DEFINES) $(INCLUDES)
+
+# if the kernel version is not passed in, use "uname -r" to determine it
+ifndef KERNEL_VERSION
+KERNEL_VERSION=`uname -r`
+endif
+
+# determine the source version of the kernel
+KERNEL_SRC_VERSION=`echo $(KERNEL_VERSION) | cut -f1 -d-`
+
+INSTALLDIR=/lib/modules/$(KERNEL_VERSION)/kernel/drivers/usb
+INSTALL=`which install`
+
+# allow command-line specification of kernel include file directory
+# and extra compile defines
+
+ifndef SYSINCLUDES
+SYSINCLUDES = usr/src/linux-$(KERNEL_SRC_VERSION)/include
+endif
+INCLUDES += -I$(SYSINCLUDES) -include $(SYSINCLUDES)/linux/modversions.h
+
+DEFINES += $(EXTRA_DEFINES)
+
+# ---------------------------------------------------------------------------
+# Targets for building the loadable module standalone (i.e. for current kernel)
+# ---------------------------------------------------------------------------
+
+all : install
+
+install : clean package-install
+
+package-install : sgil1.o
+	@if [ `id -ur` != 0 ]; then \
+		echo "Please run \"make install\" as root."; \
+	elif [ ! -d $(INSTALLDIR) ]; then \
+		echo "The install directory ($(INSTALLDIR)) does not exist!"; \
+	else \
+		$(INSTALL) -m 0664 -o root -g root sgil1.o $(INSTALLDIR)/sgil1.o && \
+		/sbin/depmod -a && \
+		$(INSTALL) -m 0775 -o root -g root sgil1.initscript /etc/rc.d/init.d/sgil1 && \
+		/sbin/chkconfig --add sgil1 && \
+		/etc/rc.d/init.d/sgil1 start && \
+		echo "sgil1 driver installed successfully."; \
+	fi
+
+
+sgil1.o : sgil1.c $(HEADERS)
+	$(CC) -c -o $(@) $(CFLAGS) sgil1.c
+
+
+# ---------------------------------------------------------------------------
+# Targets for building for an RPM pkg (builds SMP, uniprocessor kernels)
+# ---------------------------------------------------------------------------
+
+# common kernel build definitions (when building for multiple kernels
+# and/or a kernel that is not installed):
+#  - define __rh_config_h__ to prevent "/boot/kernel.h" from being included
+#  - define i686 var's so we always do an i686 build (lowest common
+#    denominator for just about all HW with USB)
+PKG_DEFINES = -D__MODULE_KERNEL_i686=1
+
+# definitions for building for each kernel flavor
+UP_DEFINES         = $(PKG_DEFINES) -D__BOOT_KERNEL_UP=1
+SMP_DEFINES        = $(PKG_DEFINES) -D__BOOT_KERNEL_SMP=1
+
+pkg: sgil1.c $(HEADERS)
+	$(CC) -c -o up.o $(CFLAGS) $(UP_DEFINES) sgil1.c
+	$(CC) -c -o smp.o $(CFLAGS) $(SMP_DEFINES) sgil1.c
+
+
+# ---------------------------------------------------------------------------
+# Common targets
+# ---------------------------------------------------------------------------
+
+clean:
+	$(RM) $(OBJECTS)
+

@@ -1,0 +1,148 @@
+#! /bin/sh
+
+#
+# RedHat/Fedora initscript header (chkconfig info)
+#
+###
+# chkconfig: 345 95 05
+# description: sets up devices nodes for SGI L1 USB driver
+###
+
+#
+# SUSE (SLES) initscript header
+#
+### BEGIN INIT INFO
+# Provides:          sgil
+# Required-Start:    $syslog $local_fs
+# Default-Start:     3 5
+# Short-Description: SGI L1 USB driver startup
+# Description:       Checks SGI L1 USB device node configuration
+#                    and loads the SGI L1 USB driver module.
+### END INIT INFO
+
+
+# Source function library.
+if [ -r /etc/rc.d/init.d/functions ]; then
+    . /etc/rc.d/init.d/functions
+    RH_INIT=y
+elif [ -r /etc/rc.status ]; then
+    . /etc/rc.status
+    rc_reset   # reset the status of this service
+    LSB_INIT=y
+fi
+
+# skip if this isn't a "start"
+[ "$1" = "start" ] || exit 0
+
+# if udev is installed, make sure the rules/permissions files
+# for these drivers are present  (we don't use the udev-created devices,
+# but having these files in place prevents udev from modifying the
+# devices that are created statically)
+udevconf=/etc/udev/udev.conf
+if [ -f $udevconf ]; then
+    udev_permsdir=`grep '^udev_permissions' $udevconf | cut -f2 -d\"`
+    if [ -d "$udev_permsdir" ]; then
+        udev_sgil1_permsfile="$udev_permsdir/10-sgil1.permissions"
+        if [ ! -f "$udev_sgil1_permsfile" ]; then
+            echo "Creating $udev_sgil1_permsfile"
+            cat > $udev_sgil1_permsfile <<EOF
+# 10-sgil1.permissions:  ownership for SGIL1 devices
+sgil1_cs:root:root:0444
+sgil1_[0-9]*:root:root:0666
+sgil1/*:root:root:0666
+EOF
+        fi
+    fi
+
+    udev_rulesdir=`grep '^udev_rules' $udevconf | cut -f2 -d\"`
+    if [ -d "$udev_rulesdir" ]; then
+        udev_sgil1_rulesfile="$udev_rulesdir/10-sgil1.rules"
+        if [ ! -f "$udev_sgil1_rulesfile" ]; then
+            echo "Creating $udev_sgil1_rulesfile"
+            cat > $udev_sgil1_rulesfile <<EOF
+# udev rule to create /dev/sgil1/N for SGIL1 USB devices
+# (we don't actually use these devfs-style device names, but doing
+#  this prevents devfs from messing with our /dev/sgil1_[0-9]* device names!)
+KERNEL="sgil1_[0-9]*", NAME="sgil1/%n"
+EOF
+        fi
+    fi
+fi
+
+# determine if this is a 2.4 or 2.6 kernel flavor of the sgil1 driver
+KVER=`uname -r | cut -d'.' -f1-2`
+
+# force the SGI L1 driver module to be loaded (if it exists)
+#  (otherwise it doesn't get loaded until an L1 is detected, so the
+#   L2 emulator will fail if it is started before an L1 is detected)
+if [ -f /lib/modules/`uname -r`/kernel/drivers/usb/sgil1.o \
+      -o -f /lib/modules/`uname -r`/kernel/drivers/usb/misc/sgil1.ko ]; then
+    if [ "$RH_INIT"  = "y" ]; then
+        action "Loading SGI L1 USB driver" /sbin/modprobe sgil1
+    elif [ "$LSB_INIT" = "y" ]; then
+        echo -n "Loading SGI L1 USB driver"
+        /sbin/modprobe sgil1
+        rc_status -v
+    fi
+fi
+
+# determine which minor device numbers are being used by the sgil1 module
+if [ "$KVER" = "2.4" ]; then
+    if [ ! -r /proc/bus/usb/drivers ]; then
+        # silently mount the USB device filesystem, in case the kernel wasn't
+        # built to mount it automatically
+        mount -t usbdevfs usbdevfs /proc/bus/usb >/dev/null 2>/dev/null
+    fi
+    if [ -r /proc/bus/usb/drivers ]; then
+        firstdev=`grep sgil1 /proc/bus/usb/drivers | sort | head --lines=1 | cut -f1 -d-`
+        if [ -z "$firstdev" ]; then
+            echo "ERROR: sgil1 USB driver is not registered, could not check device nodes."
+            exit 0
+        fi
+    else
+        echo "WARNING: could not open /proc/bus/usb/drivers, assuming default sgil1 minor device numbers (208-248)."
+        firstdev=208
+    fi
+    # in the 2.4 kernel, the connection status dev is last L1 USB minor#
+    csmajor=180
+    csminor=`expr 40 + $firstdev`
+else
+    # use a fixed range for L1 USB devices in the 2.6 kernel
+    firstdev=208
+    # connection status device is a misc device in the 2.6 kernel
+    csmajor=10
+    csminor=249
+fi
+
+# basic sanity check; skip install if 41 device nodes are present
+#   and the control endpoint is present and the correct major/minor
+[ `ls -1 /dev/sgi_* 2>/dev/null | wc -l` -ne 41 ]  ||  ! ls -l /dev/sgil1_cs | grep "$csmajor, $csminor" >/dev/null 2>/dev/null  ||  exit 0
+
+# re-make the necessary SGI USB device nodes
+echo -n "Creating SGI L1 USB devices"
+rm -f /dev/sgil1_*
+
+make_sgil1_devs()
+{
+    minor=$1
+    num_devs=$2
+
+    i=0
+    while [ $i -lt $num_devs ]; do
+        mknod /dev/sgil1_$i c 180 `expr $minor + $i`
+        i=`expr $i + 1`
+    done
+}
+
+make_sgil1_devs $firstdev 40
+mknod /dev/sgil1_cs c $csmajor $csminor
+
+chmod 666 /dev/sgil1_*
+chmod 444 /dev/sgil1_cs
+
+if [ "$RH_INIT" = "y" ]; then
+    [ $? -eq 0 ] && success && echo
+elif [ "$LSB_INIT" = "y" ]; then
+    rc_status -v
+    rc_exit
+fi

@@ -1,0 +1,55 @@
+SGI 3000 L1 CONTROLLER USB DRIVER SOURCE PACKAGE
+------------------------------------------------
+
+* OVERVIEW *
+
+This package contains the source for the USB loadable driver that is used
+when connecting an L3 controller (i.e. SGI 230 PC running Linux) directly
+to an SGI 3000 Series system via USB (without an L2 Controller).
+
+Before attempting to build this driver directly, you should be aware
+that there are RPM packages available for many SGI "supported" kernels
+and standard RedHat release kernels (for Linux kernel version 2.4.2
+and beyond).  These drivers are contained on the SGI Origin 3000 Series
+L3 Controller CD-ROM (versions 1.5 and beyond), and the Internal Support
+Tools CD (versions 2.5.1 and beyond).  They are also available for
+download from Engineering Diagnostics and Software's Diagnostic Software
+Patches (internal) web site:
+
+    http://wwweng.americas.sgi.com/PUBLIC/diags/release/patches/
+
+The driver RPM names all begin with "kernel_sgisn1_usb", followed by
+the revision of the supported kernel (as reported by the "uname -r" command).
+
+If you are running a Linux kernel version that is released and supported
+by SGI, or is a released RedHat kernel, and it is version 2.4.2 or later,
+send email to esd@postofc.corp.sgi.com and we will look into creating a
+pre-built driver package for your kernel.
+
+
+
+* BUILDING AND INSTALLING THE DRIVER *
+
+In order to build the driver, you need have the kernel source and include
+files (provided by the "kernel-source-<kernel version>" RPM) for the
+running kernel installed on the machine.  The kernel source is installed
+at /usr/src/linux-<kernel version> when the RPM is installed.
+
+To build the driver, install it, and load it automatically (along with 
+creating the /dev/sgil1* devices required by the driver), just run
+"make" (as root) in the directory where sgil1.c, sgil1.h and Makefile are
+located.  If the header files for your kernel are not in
+/usr/src/linux-2.4/include, then you need to set the SYSINCLUDES macro:
+
+    # make SYSINCLUDES=-I/usr/src/linux-<kernel version>/include
+
+(notice that the path must be prepended with "-I").  This will build the
+driver, install it, install the startup script /etc/rc.d/init.d/sgil1,
+and run that startup script.  The /etc/rc.d/init.d/sgil1 script is
+run at boot-time to insure that the /dev/sgil1* device nodes exist and that
+the sgil1.o driver is loaded into the kernel.
+
+If you have problems building and/or installing this driver, you can send
+email to esd@postofc.corp.sgi.com along with a detailed description of
+the problem (all of the output generated when running "make") and 
+the kernel version that you are running.
