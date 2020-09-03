@@ -6,11 +6,19 @@
 #
 
 KVER=$(shell uname -r | cut -d'.' -f1-2)
+USE_RECURSIVE_MAKE_54_26=NO
 
-ifeq ($(KVER),2.6)
+ifeq ($(KVER),5.4)
+  USE_RECURSIVE_MAKE_54_26=YES
+else
+  ifeq ($(KVER),2.6)
+    USE_RECURSIVE_MAKE_54_26=YES
+  endif
+endif
 
+ifeq ($(USE_RECURSIVE_MAKE_54_26),YES)
 #
-# 2.6 kernel driver build Makefile
+# 5.4 / 2.6 kernel driver build Makefile
 #
 
 
@@ -49,9 +57,18 @@ PWD         := $(shell pwd)
 
 build : sgil1.ko
 
+ifeq ($(KVER),2.6)
+
 sgil1.ko sgil1.o : sgil1.c
 	$(MAKE) -C $(KDIR) V=1 SUBDIRS=$(PWD) modules
 
+else
+
+sgil1.ko sgil1.o : sgil1.c
+	$(MAKE) -C $(KDIR) V=1 M=$(PWD) modules
+
+
+endif
 #
 # kernel module install defines/targets
 #
@@ -83,8 +100,18 @@ package-install : sgil1.ko
 		fi; \
 	fi
 
+
+ifeq ($(KVER),2.6)
+
 clean :
 	$(MAKE) -C $(KDIR) V=1 SUBDIRS=$(PWD) $(@)
+
+else
+
+clean :
+	$(MAKE) -C $(KDIR) V=1 M=$(PWD) $(@)
+
+endif
 
 endif    # end of 2.6 kernel source tree
 
@@ -95,10 +122,14 @@ endif    # end of 2.6 kernel source tree
 
 else
 
-  ifeq ($(KVER),2.4)
-    include Makefile.24
+  ifeq ($(KVER),5.4)
+    include Makefile.54
   else
-    $(error "Unsupported kernel version!  ($(KVER))");
+    ifeq ($(KVER),2.4)
+      include Makefile.24
+    else
+      $(error "Unsupported kernel version!  ($(KVER))");
+    endif
   endif
 
 endif    # end of 2.4 kernel build support
