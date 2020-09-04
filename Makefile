@@ -45,7 +45,6 @@ KERNEL_VERSION=$(shell uname -r)
 endif
 
 
-
 all : build install
 
 #
@@ -58,17 +57,14 @@ PWD         := $(shell pwd)
 build : sgil1.ko
 
 ifeq ($(KVER),2.6)
-
-sgil1.ko sgil1.o : sgil1.c
-	$(MAKE) -C $(KDIR) V=1 SUBDIRS=$(PWD) modules
-
+  WHAT_SUBDIRS=SUBDIRS
 else
+  WHAT_SUBDIRS=M
+endif
 
 sgil1.ko sgil1.o : sgil1.c
-	$(MAKE) -C $(KDIR) V=1 M=$(PWD) modules
+	$(MAKE) -C $(KDIR) V=1 $(WHAT_SUBDIRS)=$(PWD) modules
 
-
-endif
 #
 # kernel module install defines/targets
 #
@@ -76,6 +72,14 @@ endif
 KERNEL_MOD_DIR=/lib/modules/$(KERNEL_VERSION)
 INSTALLDIR=$(KERNEL_MOD_DIR)/kernel/drivers/usb/misc
 INSTALL=`which install`
+
+CHECK_CONFIG=$(shell which chkconfig)
+ifeq ($(strip $(CHECK_CONFIG)),)
+  CHECK_CONFIG=$(shell which update-rc.d)
+  CHECK_COMMAND=$(CHECK_CONFIG) sgil1 defaults
+else
+  CHECK_COMMAND=$(CHECK_CONFIG) --add sgil1
+endif
 
 install : package-install
 
@@ -88,7 +92,7 @@ package-install : sgil1.ko
 		$(INSTALL) -m 0664 -o root -g root sgil1.ko $(INSTALLDIR)/sgil1.ko && \
 		echo "sgil1.o driver installed to $(INSTALLDIR)/sgil1.o" && \
 		$(INSTALL) -m 0775 -o root -g root sgil1.initscript /etc/init.d/sgil1 && \
-		/sbin/chkconfig --add sgil1 && \
+		$(CHECK_COMMAND) && \
 		echo "sgil1 initscript installed to /etc/init.d/sgil1"; \
 		if [ "$(KERNEL_VERSION)" = `uname -r` ]; then \
 			/sbin/depmod -a && \
@@ -100,18 +104,8 @@ package-install : sgil1.ko
 		fi; \
 	fi
 
-
-ifeq ($(KVER),2.6)
-
 clean :
-	$(MAKE) -C $(KDIR) V=1 SUBDIRS=$(PWD) $(@)
-
-else
-
-clean :
-	$(MAKE) -C $(KDIR) V=1 M=$(PWD) $(@)
-
-endif
+	$(MAKE) -C $(KDIR) V=1 $(WHAT_SUBDIRS)=$(PWD) $(@)
 
 endif    # end of 2.6 kernel source tree
 
@@ -122,14 +116,10 @@ endif    # end of 2.6 kernel source tree
 
 else
 
-  ifeq ($(KVER),5.4)
-    include Makefile.54
-  else
     ifeq ($(KVER),2.4)
       include Makefile.24
     else
       $(error "Unsupported kernel version!  ($(KVER))");
     endif
-  endif
 
 endif    # end of 2.4 kernel build support

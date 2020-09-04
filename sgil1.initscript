@@ -1,4 +1,4 @@
-#! /bin/sh
+#!/bin/sh
 
 #
 # RedHat/Fedora initscript header (chkconfig info)
@@ -29,6 +29,9 @@ elif [ -r /etc/rc.status ]; then
     . /etc/rc.status
     rc_reset   # reset the status of this service
     LSB_INIT=y
+elif [ -r /lib/lsb/init-functions ]; then
+    . /lib/lsb/init-functions
+    DEB_INIT=y
 fi
 
 # skip if this isn't a "start"
@@ -39,6 +42,9 @@ fi
 # but having these files in place prevents udev from modifying the
 # devices that are created statically)
 udevconf=/etc/udev/udev.conf
+
+KVER=`uname -r | cut -d'.' -f1-2`
+
 if [ -f $udevconf ]; then
     udev_permsdir=`grep '^udev_permissions' $udevconf | cut -f2 -d\"`
     if [ -d "$udev_permsdir" ]; then
@@ -54,7 +60,13 @@ EOF
         fi
     fi
 
-    udev_rulesdir=`grep '^udev_rules' $udevconf | cut -f2 -d\"`
+    if [ "$KVER" = "5.4" ]; then
+      udev_rulesdir=/etc/udev/rules.d
+    else
+      udev_rulesdir=`grep '^udev_rules' $udevconf | cut -f2 -d\"`
+    fi
+
+#    /* udev_rulesdir=`grep '^udev_rules' $udevconf | cut -f2 -d\"` */
     if [ -d "$udev_rulesdir" ]; then
         udev_sgil1_rulesfile="$udev_rulesdir/10-sgil1.rules"
         if [ ! -f "$udev_sgil1_rulesfile" ]; then
@@ -70,19 +82,22 @@ EOF
 fi
 
 # determine if this is a 2.4 or 2.6 kernel flavor of the sgil1 driver
-KVER=`uname -r | cut -d'.' -f1-2`
+# /* KVER=`uname -r | cut -d'.' -f1-2` */
 
 # force the SGI L1 driver module to be loaded (if it exists)
 #  (otherwise it doesn't get loaded until an L1 is detected, so the
 #   L2 emulator will fail if it is started before an L1 is detected)
-if [ -f /lib/modules/`uname -r`/kernel/drivers/usb/sgil1.o \
-      -o -f /lib/modules/`uname -r`/kernel/drivers/usb/misc/sgil1.ko ]; then
+if [ -f /lib/modules/`uname -r`/kernel/drivers/usb/sgil1.o ] || \
+      [ -f /lib/modules/`uname -r`/kernel/drivers/usb/misc/sgil1.ko ]; then
     if [ "$RH_INIT"  = "y" ]; then
         action "Loading SGI L1 USB driver" /sbin/modprobe sgil1
     elif [ "$LSB_INIT" = "y" ]; then
         echo -n "Loading SGI L1 USB driver"
         /sbin/modprobe sgil1
         rc_status -v
+    elif [ "$DEB_INIT" = "y" ]; then
+        echo -n "Loading SGI L1 USB driver"
+        /sbin/modprobe sgil1
     fi
 fi
 
@@ -116,7 +131,9 @@ fi
 
 # basic sanity check; skip install if 41 device nodes are present
 #   and the control endpoint is present and the correct major/minor
-[ `ls -1 /dev/sgi_* 2>/dev/null | wc -l` -ne 41 ]  ||  ! ls -l /dev/sgil1_cs | grep "$csmajor, $csminor" >/dev/null 2>/dev/null  ||  exit 0
+if [ `ls -1 /dev/sgi_* 2>/dev/null | wc -l` -ne 41 ]  ||  [ ! ls -l /dev/sgil1_cs | grep "$csmajor, $csminor" >/dev/null 2>/dev/null ]; then
+  exit 0
+fi
 
 # re-make the necessary SGI USB device nodes
 echo -n "Creating SGI L1 USB devices"
@@ -145,4 +162,6 @@ if [ "$RH_INIT" = "y" ]; then
 elif [ "$LSB_INIT" = "y" ]; then
     rc_status -v
     rc_exit
+elif [ "$DEB_INIT" = "y" ]; then
+  exit 0
 fi
