@@ -72,11 +72,13 @@ sgil1.ko sgil1.o : sgil1.c
 KERNEL_MOD_DIR=/lib/modules/$(KERNEL_VERSION)
 INSTALLDIR=$(KERNEL_MOD_DIR)/kernel/drivers/usb/misc
 INSTALL=`which install`
+INIT_SCRIPT=sgil1.initscript
 
 CHECK_CONFIG=$(shell which chkconfig)
 ifeq ($(strip $(CHECK_CONFIG)),)
   CHECK_CONFIG=$(shell which update-rc.d)
   CHECK_COMMAND=$(CHECK_CONFIG) sgil1 defaults
+  INIT_SCRIPT=sgil1.initscript_deb
 else
   CHECK_COMMAND=$(CHECK_CONFIG) --add sgil1
 endif
@@ -91,7 +93,7 @@ package-install : sgil1.ko
 	else \
 		$(INSTALL) -m 0664 -o root -g root sgil1.ko $(INSTALLDIR)/sgil1.ko && \
 		echo "sgil1.o driver installed to $(INSTALLDIR)/sgil1.o" && \
-		$(INSTALL) -m 0775 -o root -g root sgil1.initscript /etc/init.d/sgil1 && \
+		$(INSTALL) -m 0775 -o root -g root $(INIT_SCRIPT) /etc/init.d/sgil1 && \
 		$(CHECK_COMMAND) && \
 		echo "sgil1 initscript installed to /etc/init.d/sgil1"; \
 		if [ "$(KERNEL_VERSION)" = `uname -r` ]; then \

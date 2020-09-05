@@ -1,4 +1,4 @@
-#! /bin/sh
+#!/bin/sh
 
 #
 # RedHat/Fedora initscript header (chkconfig info)
@@ -22,13 +22,9 @@
 
 
 # Source function library.
-if [ -r /etc/rc.d/init.d/functions ]; then
-    . /etc/rc.d/init.d/functions
-    RH_INIT=y
-elif [ -r /etc/rc.status ]; then
-    . /etc/rc.status
-    rc_reset   # reset the status of this service
-    LSB_INIT=y
+if [ -r /lib/lsb/init-functions ]; then
+    . /lib/lsb/init-functions
+    DEB_INIT=y
 fi
 
 # skip if this isn't a "start"
@@ -39,6 +35,10 @@ fi
 # but having these files in place prevents udev from modifying the
 # devices that are created statically)
 udevconf=/etc/udev/udev.conf
+udev_rulesdir=/etc/udev/rules.d
+
+KVER=`uname -r | cut -d'.' -f1-2`
+
 if [ -f $udevconf ]; then
     udev_permsdir=`grep '^udev_permissions' $udevconf | cut -f2 -d\"`
     if [ -d "$udev_permsdir" ]; then
@@ -54,7 +54,6 @@ EOF
         fi
     fi
 
-    udev_rulesdir=`grep '^udev_rules' $udevconf | cut -f2 -d\"`
     if [ -d "$udev_rulesdir" ]; then
         udev_sgil1_rulesfile="$udev_rulesdir/10-sgil1.rules"
         if [ ! -f "$udev_sgil1_rulesfile" ]; then
@@ -69,54 +68,28 @@ EOF
     fi
 fi
 
-# determine if this is a 2.4 or 2.6 kernel flavor of the sgil1 driver
-KVER=`uname -r | cut -d'.' -f1-2`
-
 # force the SGI L1 driver module to be loaded (if it exists)
 #  (otherwise it doesn't get loaded until an L1 is detected, so the
 #   L2 emulator will fail if it is started before an L1 is detected)
-if [ -f /lib/modules/`uname -r`/kernel/drivers/usb/sgil1.o \
-      -o -f /lib/modules/`uname -r`/kernel/drivers/usb/misc/sgil1.ko ]; then
-    if [ "$RH_INIT"  = "y" ]; then
-        action "Loading SGI L1 USB driver" /sbin/modprobe sgil1
-    elif [ "$LSB_INIT" = "y" ]; then
+if [ -f /lib/modules/`uname -r`/kernel/drivers/usb/sgil1.o ] || \
+      [ -f /lib/modules/`uname -r`/kernel/drivers/usb/misc/sgil1.ko ]; then
+    if [ "$DEB_INIT" = "y" ]; then
         echo -n "Loading SGI L1 USB driver"
         /sbin/modprobe sgil1
-        rc_status -v
     fi
 fi
 
-# determine which minor device numbers are being used by the sgil1 module
-if [ "$KVER" = "2.4" ]; then
-    if [ ! -r /proc/bus/usb/drivers ]; then
-        # silently mount the USB device filesystem, in case the kernel wasn't
-        # built to mount it automatically
-        mount -t usbdevfs usbdevfs /proc/bus/usb >/dev/null 2>/dev/null
-    fi
-    if [ -r /proc/bus/usb/drivers ]; then
-        firstdev=`grep sgil1 /proc/bus/usb/drivers | sort | head --lines=1 | cut -f1 -d-`
-        if [ -z "$firstdev" ]; then
-            echo "ERROR: sgil1 USB driver is not registered, could not check device nodes."
-            exit 0
-        fi
-    else
-        echo "WARNING: could not open /proc/bus/usb/drivers, assuming default sgil1 minor device numbers (208-248)."
-        firstdev=208
-    fi
-    # in the 2.4 kernel, the connection status dev is last L1 USB minor#
-    csmajor=180
-    csminor=`expr 40 + $firstdev`
-else
-    # use a fixed range for L1 USB devices in the 2.6 kernel
-    firstdev=208
-    # connection status device is a misc device in the 2.6 kernel
-    csmajor=10
-    csminor=249
-fi
+# use a fixed range for L1 USB devices in the 2.6 kernel
+firstdev=208
+# connection status device is a misc device in the 2.6 kernel
+csmajor=10
+csminor=249
 
 # basic sanity check; skip install if 41 device nodes are present
 #   and the control endpoint is present and the correct major/minor
-[ `ls -1 /dev/sgi_* 2>/dev/null | wc -l` -ne 41 ]  ||  ! ls -l /dev/sgil1_cs | grep "$csmajor, $csminor" >/dev/null 2>/dev/null  ||  exit 0
+if [ `ls -1 /dev/sgi_* 2>/dev/null | wc -l` -ne 41 ]  ||  [ ! ls -l /dev/sgil1_cs | grep "$csmajor, $csminor" >/dev/null 2>/dev/null ]; then
+  exit 0
+fi
 
 # re-make the necessary SGI USB device nodes
 echo -n "Creating SGI L1 USB devices"
@@ -140,9 +113,6 @@ mknod /dev/sgil1_cs c $csmajor $csminor
 chmod 666 /dev/sgil1_*
 chmod 444 /dev/sgil1_cs
 
-if [ "$RH_INIT" = "y" ]; then
-    [ $? -eq 0 ] && success && echo
-elif [ "$LSB_INIT" = "y" ]; then
-    rc_status -v
-    rc_exit
+if [ "$DEB_INIT" = "y" ]; then
+  exit 0
 fi
